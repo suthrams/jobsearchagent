@@ -1,0 +1,65 @@
+# ─── Secrets & credentials ───────────────────────────────────────────────────
+.env
+.env.*
+*.env
+
+# ─── Personal data ────────────────────────────────────────────────────────────
+# Your resume PDF — contains personal PII, never commit
+resume.pdf
+*.pdf
+
+# Parsed resume profile — extracted from resume, contains name/email/work history
+data/profile.json
+
+# Job search database — contains your full search and application history
+data/jobs.db
+data/*.db
+
+# Tailored resumes and run logs — contain personal content
+output/
+
+# ─── Streamlit ────────────────────────────────────────────────────────────────
+# Contains auth tokens from streamlit login
+.streamlit/credentials.toml
+
+# ─── LinkedIn inbox ───────────────────────────────────────────────────────────
+# Processed automatically — no need to commit, and may contain private URLs
+inbox/linkedin.txt
+
+# ─── Config (user-specific, never commit) ────────────────────────────────────
+config/config.yaml
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Virtual environments ─────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+desktop.ini
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+tmp_*.py

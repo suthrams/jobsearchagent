@@ -1,0 +1,99 @@
+# ─── Job Search Agent — Example Configuration ────────────────────────────────
+# Copy this file to config/config.yaml and fill in your preferences.
+# config.yaml is gitignored — this file is safe to commit.
+
+# ─── Search Preferences ───────────────────────────────────────────────────────
+search:
+  titles:
+    - Senior Software Engineer
+    - Staff Engineer
+    - Principal Engineer
+    - Solutions Architect
+    - Principal Architect
+    - Senior Manager Engineering
+    - Director of Engineering
+    - Head of Engineering
+
+  locations:
+    - Atlanta, GA
+    - Remote
+
+  work_mode:
+    - remote
+    - hybrid
+    - onsite
+
+  # Optional — uncomment and add keywords relevant to your stack
+  # keywords:
+  #   - gcp
+  #   - kubernetes
+  #   - dotnet
+  #   - microservices
+  #   - platform engineering
+
+  # Optional — filter out jobs below a certain experience requirement
+  # years_of_experience:
+  #   min: 8
+  #   max: 20
+
+# ─── Salary ───────────────────────────────────────────────────────────────────
+# Optional — used only when the job posting includes salary information
+salary:
+  min_desired: 150000
+  currency: USD
+  ignore_if_missing: true # do not penalize jobs that omit salary
+
+# ─── Career Tracks ────────────────────────────────────────────────────────────
+# Enable the tracks relevant to you. Each active track gets its own score.
+tracks:
+  ic: true # Senior / Staff / Principal Engineer
+  architect: true # Solutions Architect / Principal Architect
+  management: true # Senior Manager / Director / Head of Engineering / VP
+
+# ─── Claude Settings ──────────────────────────────────────────────────────────
+claude:
+  model: claude-sonnet-4-6
+
+  # Token limits per operation — keeps costs predictable
+  max_tokens:
+    resume_parsing: 1000
+    job_scoring: 1000
+    resume_tailoring: 2000
+
+  # Temperature per operation — lower = more consistent JSON output
+  temperature:
+    resume_parsing: 0.1
+    job_scoring: 0.1
+    resume_tailoring: 0.3
+
+# ─── Scrapers ─────────────────────────────────────────────────────────────────
+scrapers:
+  # LinkedIn — paste URLs manually into this file, one per line
+  linkedin:
+    inbox_file: inbox/linkedin.txt
+
+  # Indeed RSS — keywords drive the feed URL, location is appended automatically
+  adzuna:
+    enabled: true
+    country: us
+    keywords:
+      - software engineer
+      - solutions architect
+      - engineering manager
+    location: Atlanta, GA
+    radius_km: 80
+    results_per_page: 20
+
+  # Ladders — focuses on $100k+ roles, good signal-to-noise for senior jobs
+  ladders:
+    enabled: false
+
+# ─── Storage ──────────────────────────────────────────────────────────────────
+storage:
+  database: data/jobs.db
+  tailored_resumes_dir: output/resumes
+  logs_dir: output/logs
+
+# ─── Staleness ────────────────────────────────────────────────────────────────
+staleness:
+  max_days: 30 # jobs posted more than this many days ago are skipped
