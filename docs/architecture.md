@@ -6,13 +6,13 @@ All diagrams are written in [Mermaid](https://mermaid.js.org/) and render automa
 
 ## 1. System Architecture — Component Overview
 
-High-level block diagram showing the four layers and how components relate.
+High-level block diagram showing all five layers including the Streamlit dashboard UI.
 
 ```mermaid
 graph TB
-    subgraph ENTRY["Entry Points"]
-        CLI["main.py CLI"]
-        DASH["dashboard.py Streamlit UI"]
+    subgraph UI["User Interfaces"]
+        CLI["main.py\nCLI Terminal"]
+        DASH["dashboard.py\nStreamlit Browser UI"]
     end
 
     subgraph AGENTS["Agent Layer"]
@@ -43,7 +43,7 @@ graph TB
     CLI --> PA
     CLI --> SA
     CLI --> TA
-    DASH --> DB
+    DASH -->|"reads scores"| DB
 
     PA --> CC
     PA --> CACHE
@@ -62,6 +62,34 @@ graph TB
     SA --> DB
     TA --> DB
     PA --> DB
+```
+
+---
+
+## 11. Streamlit Dashboard — UI Data Flow
+
+How the browser dashboard reads and displays scored job data.
+
+```mermaid
+flowchart TD
+    DB[("SQLite Database\njobs.db")] -->|"SQL query\nscored jobs only"| LOAD["load_jobs()\ncached 30 seconds"]
+    LOAD --> DF["Pandas DataFrame\nall scored jobs"]
+
+    DF --> SIDEBAR["Sidebar Controls\nmin score slider\nsearch filter\nview selector"]
+    SIDEBAR --> FILTER["Filtered DataFrame"]
+
+    FILTER --> V1["Top Matches View\nall tracks ranked by best score\nscore metrics + job cards"]
+    FILTER --> V2["IC Track View\nSenior Staff Principal Engineer\nranked by IC score"]
+    FILTER --> V3["Architect Track View\nSolutions Principal Architect\nranked by architect score"]
+    FILTER --> V4["Management Track View\nDirector VP Head of Eng\nranked by management score"]
+    FILTER --> V5["Companies View\nbar chart of top companies\ndrill-down by company"]
+
+    V5 --> CHART["Plotly Bar Chart\ntop 20 companies\nby best match score"]
+    V1 --> CARDS["Job Cards\nexpandable detail view\nClaude summaries + links"]
+
+    style DB fill:#fef9c3,stroke:#eab308
+    style CHART fill:#dbeafe,stroke:#3b82f6
+    style CARDS fill:#dcfce7,stroke:#16a34a
 ```
 
 ---

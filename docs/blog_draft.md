@@ -5,6 +5,8 @@
 
 > **Publishing note:** This is a draft. Diagrams are in Mermaid format — export them as images before posting to LinkedIn. Suggested tool: paste each diagram at mermaid.live → Download PNG.
 
+> **Content disclosure:** Portions of this article were drafted and edited with the assistance of Claude (Anthropic). The project, the code, the architecture decisions, and the lessons learned are entirely my own — Claude helped me articulate them clearly. I reviewed and revised every section to ensure it accurately reflects my experience.
+
 ---
 
 ## HEADLINE OPTIONS (pick one)
@@ -388,6 +390,20 @@ streamlit run dashboard.py  # browser dashboard with charts
 ```
 
 The full source code, documentation, and architecture diagrams are on GitHub: **github.com/suthrams/jobsearchagent**
+
+---
+
+## A Note on Data Sources and Ethics
+
+Since this article is about a job scraping application, it's worth being transparent about data sources and legality. This is a personal learning project — not a commercial service — but the same questions apply to anything that touches third-party data.
+
+**Adzuna API (✅ Fully legal):** Adzuna provides a public REST API for job data, free for developers. This is the primary data source. I'm using it exactly as intended: sending a search query, getting back structured listings. No scraping, no ToS concerns.
+
+**LinkedIn (⚠️ Grey area for personal use):** LinkedIn's ToS prohibits automated scraping. My approach sidesteps most of the concern: I manually copy URLs I'm interested in into a text file, and the application fetches those specific public pages to extract job details. It's closer to "bookmarking" than scraping at scale. I use this only for my own job search, not commercially, and it fetches a handful of URLs per run. I'd recommend disabling this component if you're building something for others or running it at scale.
+
+**Ladders.com (⚠️ HTML scraping):** The Ladders scraper uses HTML parsing on public pages, which technically violates most sites' ToS regardless of scale. I included it as a coding exercise — in practice, I recommend disabling it (`scrapers.ladders.enabled: false` in config) and relying solely on the Adzuna API.
+
+**General principle:** Building small personal-use tools for learning is very different from building commercial data pipelines. If you adapt this project, check the terms of any data source you add and respect `robots.txt`. The patterns in this article are equally applicable to fully legitimate data sources.
 
 ---
 
