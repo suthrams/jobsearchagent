@@ -5,6 +5,14 @@ Each doc covers purpose, public interface, data flow, and the agentic AI pattern
 
 ## Table of Contents
 
+### Legal and Dependencies
+| Document | Purpose |
+|---|---|
+| [Disclaimer and Usage Terms](disclaimer.md) | No-warranty statement, API cost responsibility, data source policies, personal data handling |
+| [Third-Party Dependencies](dependencies.md) | All open source libraries with versions and licence types |
+
+---
+
 ### User Guide
 See [user_guide.md](user_guide.md) for the full end-to-end walkthrough — setup, daily workflow, reading results, tailoring, and troubleshooting.
 

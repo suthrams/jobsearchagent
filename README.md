@@ -255,4 +255,14 @@ This project was built as a learning exercise in agentic AI patterns. Patterns d
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE) for the full text.
+
+Key points: you are free to use, modify, and distribute this project, including commercially, provided you retain attribution and the licence notice. Contributors also grant you a patent licence for their contributions. If you sue anyone over patents related to this project, that patent licence terminates.
+
+## Disclaimer
+
+This is a personal learning project. See [docs/disclaimer.md](docs/disclaimer.md) for full terms including data source policies, no-warranty statement, and API cost responsibility.
+
+## Dependencies
+
+All third-party libraries used by this project are listed in [docs/dependencies.md](docs/dependencies.md) with their versions and licence types.
