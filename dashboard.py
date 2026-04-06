@@ -106,6 +106,54 @@ def mark_job_applied(job_id: int) -> None:
 # ─── Data loading ─────────────────────────────────────────────────────────────
 
 
+@st.cache_data(ttl=30)
+def last_run_at() -> str | None:
+    """Returns the run_at timestamp of the most recent run, or None if no runs recorded."""
+    if not DB_PATH.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        row = conn.execute("SELECT run_at FROM runs ORDER BY run_at DESC LIMIT 1").fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=30)
+def load_new_jobs() -> pd.DataFrame:
+    """
+    Loads all jobs (any status) found since the most recent run started.
+    Includes NEW (unscored) jobs so the user can see what was just scraped.
+    """
+    if not DB_PATH.exists():
+        return pd.DataFrame()
+
+    last = last_run_at()
+    if not last:
+        return pd.DataFrame()
+
+    conn = sqlite3.connect(str(DB_PATH))
+    df = pd.read_sql_query(
+        """
+        SELECT
+            id, title, company, location, source, status, work_mode,
+            score_ic, score_architect, score_management, score_best,
+            url, scores_json, salary_json, posted_at, found_at
+        FROM jobs
+        WHERE found_at >= ?
+        ORDER BY found_at DESC
+        """,
+        conn,
+        params=(last,),
+    )
+    conn.close()
+    if not df.empty:
+        df["found_at"] = pd.to_datetime(df["found_at"], errors="coerce")
+        df["posted_at"] = pd.to_datetime(df["posted_at"], errors="coerce").dt.date
+    return df
+
+
 @st.cache_data(ttl=30)  # refresh every 30s so a new run is picked up automatically
 def load_jobs() -> pd.DataFrame:
     """Loads all scored jobs from the database into a DataFrame."""
@@ -373,7 +421,7 @@ with st.sidebar:
 
     view = st.radio(
         "View",
-        ["Top Matches", "IC Track", "Architect Track", "Management Track", "Companies", "Run History"],
+        ["New Jobs", "Top Matches", "IC Track", "Architect Track", "Management Track", "Companies", "Run History"],
         index=0,
     )
 
@@ -392,11 +440,11 @@ with st.sidebar:
 
 df = load_jobs()
 
-# Run History is self-contained — doesn't need the jobs dataframe
-if view == "Run History":
+# Run History and New Jobs are self-contained — don't need the scored-jobs dataframe
+if view in ("Run History", "New Jobs"):
     df = pd.DataFrame()  # suppress the empty-jobs warning below
 
-if df.empty and view != "Run History":
+if df.empty and view not in ("Run History", "New Jobs"):
     st.warning("No scored jobs found. Run `python main.py` first.")
     st.stop()
 
@@ -410,7 +458,83 @@ if search and not df.empty:
 
 # ─── Views ────────────────────────────────────────────────────────────────────
 
-if view == "Top Matches":
+if view == "New Jobs":
+    st.header("New Jobs — Latest Run")
+    last = last_run_at()
+    if last:
+        st.caption(f"Jobs found since last run started at {last[:16].replace('T', ' ')} UTC")
+    new_df = load_new_jobs()
+
+    if new_df.empty:
+        st.info("No new jobs found in the latest run. Try running `python main.py` again.")
+    else:
+        scored_mask = new_df["status"] == "scored"
+        new_mask    = new_df["status"] == "new"
+
+        n1, n2, n3 = st.columns(3)
+        n1.metric("Found this run", len(new_df))
+        n2.metric("Scored", int(scored_mask.sum()))
+        n3.metric("Awaiting scoring", int(new_mask.sum()))
+
+        st.markdown("---")
+
+        # Scored jobs — show with scores
+        scored_new = new_df[scored_mask].copy()
+        if not scored_new.empty:
+            st.subheader(f"Scored ({len(scored_new)})")
+            scored_new["salary"] = scored_new["salary_json"].apply(
+                lambda x: "" if not x else (lambda s: f"{s.get('currency','')} {s.get('min','?'):,}–{s.get('max','?'):,}" if s.get("min") or s.get("max") else "")(json.loads(x)) if x else ""
+            )
+            display_scored = scored_new[[
+                "id", "title", "company", "location",
+                "score_ic", "score_architect", "score_management", "score_best",
+                "salary", "url",
+            ]].rename(columns={
+                "score_ic": "IC", "score_architect": "Arch",
+                "score_management": "Mgmt", "score_best": "Best", "url": "URL",
+            })
+            st.dataframe(
+                display_scored, hide_index=True, use_container_width=True,
+                column_config={
+                    "id":    st.column_config.NumberColumn("ID",   width="small"),
+                    "title": st.column_config.TextColumn("Title",  width="large"),
+                    "company": st.column_config.TextColumn("Company", width="medium"),
+                    "location": st.column_config.TextColumn("Location", width="medium"),
+                    "IC":   st.column_config.ProgressColumn("IC",   min_value=0, max_value=100, format="%d"),
+                    "Arch": st.column_config.ProgressColumn("Arch", min_value=0, max_value=100, format="%d"),
+                    "Mgmt": st.column_config.ProgressColumn("Mgmt", min_value=0, max_value=100, format="%d"),
+                    "Best": st.column_config.ProgressColumn("Best", min_value=0, max_value=100, format="%d"),
+                    "salary": st.column_config.TextColumn("Salary", width="medium"),
+                    "URL":  st.column_config.LinkColumn("Link",    width="small"),
+                },
+            )
+            st.markdown("---")
+            st.subheader("Job Details")
+            for _, row in scored_new.sort_values("score_best", ascending=False).iterrows():
+                render_job_card(row, highlight_track="architect")
+
+        # Unscored jobs — show as a plain list so user knows what came in
+        unscored_new = new_df[new_mask].copy()
+        if not unscored_new.empty:
+            st.subheader(f"Awaiting Scoring ({len(unscored_new)})")
+            st.caption("These jobs were scraped this run but haven't been scored yet (run cancelled or first-time batch).")
+            display_unscored = unscored_new[[
+                "id", "title", "company", "location", "source", "work_mode", "url"
+            ]].rename(columns={"url": "URL"})
+            st.dataframe(
+                display_unscored, hide_index=True, use_container_width=True,
+                column_config={
+                    "id":        st.column_config.NumberColumn("ID",       width="small"),
+                    "title":     st.column_config.TextColumn("Title",      width="large"),
+                    "company":   st.column_config.TextColumn("Company",    width="medium"),
+                    "location":  st.column_config.TextColumn("Location",   width="medium"),
+                    "source":    st.column_config.TextColumn("Source",     width="small"),
+                    "work_mode": st.column_config.TextColumn("Mode",       width="small"),
+                    "URL":       st.column_config.LinkColumn("Link",       width="small"),
+                },
+            )
+
+elif view == "Top Matches":
     st.header("Top Matches")
     st.caption(f"Jobs scored >= {min_score} across all tracks, ranked by best score")
 
@@ -427,16 +551,17 @@ if view == "Top Matches":
 
     st.markdown("---")
 
-    # Full table
+    # Full table — include found_at so user can see when each job was discovered
     display = filtered[[
         "id", "title", "company", "location",
         "score_ic", "score_architect", "score_management", "score_best",
-        "salary", "url",
+        "salary", "found_at", "url",
     ]].rename(columns={
         "score_ic": "IC",
         "score_architect": "Arch",
         "score_management": "Mgmt",
         "score_best": "Best",
+        "found_at": "Found",
         "url": "URL",
     })
 
@@ -454,6 +579,7 @@ if view == "Top Matches":
             "Mgmt": st.column_config.ProgressColumn("Mgmt", min_value=0, max_value=100, format="%d"),
             "Best": st.column_config.ProgressColumn("Best", min_value=0, max_value=100, format="%d"),
             "salary": st.column_config.TextColumn("Salary", width="medium"),
+            "Found": st.column_config.DatetimeColumn("Found", format="MMM D, HH:mm", width="medium"),
             "URL": st.column_config.LinkColumn("Link", width="small"),
         },
     )

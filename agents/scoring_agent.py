@@ -105,7 +105,7 @@ class ScoringAgent:
         jobs: list[Job],
         profile: Profile,
         db=None,
-        on_progress: Callable[[int, int], None] | None = None,
+        on_progress: Callable[[int, int, list[Job]], None] | None = None,
     ) -> list[Job]:
         """
         Scores a list of jobs in batches of BATCH_SIZE.
@@ -116,7 +116,9 @@ class ScoringAgent:
             db          : Optional Database — saves each job after scoring so
                           progress is not lost on cancellation.
             on_progress : Optional callback invoked before each batch with
-                          (batch_number, total_batches).
+                          (batch_number, total_batches, batch_jobs). The third
+                          argument is the list of Job objects in the current batch,
+                          allowing callers to display titles as scoring progresses.
 
         Returns:
             The same list with scores and status populated on eligible jobs.
@@ -149,7 +151,7 @@ class ScoringAgent:
 
         for batch_num, chunk in enumerate(chunks, 1):
             if on_progress:
-                on_progress(batch_num, total_batches)
+                on_progress(batch_num, total_batches, chunk)
 
             try:
                 scores_list = self._score_chunk(chunk, profile)

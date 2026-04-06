@@ -403,17 +403,38 @@ def cmd_scrape_and_score(config: AppConfig, db: Database, agents: dict, client: 
 
     console.print("[bold]Scraping jobs...[/bold]")
     raw_jobs = run_scrapers(config)
-    console.print(f"Found [cyan]{len(raw_jobs)}[/cyan] jobs across all sources")
+
+    # Per-source breakdown
+    from collections import Counter
+    by_source = Counter(
+        j.source.value if hasattr(j.source, "value") else str(j.source)
+        for j in raw_jobs
+    )
+    source_summary = "  ".join(
+        f"[dim]{src}:[/dim] [cyan]{n}[/cyan]" for src, n in sorted(by_source.items())
+    )
+    console.print(f"Found [cyan]{len(raw_jobs)}[/cyan] jobs — {source_summary}")
 
     # Insert into DB — deduplicates by URL and by title+company
-    new_count = 0
+    new_jobs: list = []
     for job in raw_jobs:
         if db.get_by_url(job.url) or db.get_by_title_company(job.title, job.company):
             continue
         db.insert_job(job)
-        new_count += 1
+        new_jobs.append(job)
 
-    console.print(f"[cyan]{new_count}[/cyan] new jobs added to database")
+    new_count = len(new_jobs)
+    if new_count == 0:
+        console.print("[yellow]0 new jobs — all scraped listings already in database.[/yellow]")
+    else:
+        console.print(f"[cyan]{new_count}[/cyan] new jobs added to database:")
+        for job in new_jobs[:25]:
+            console.print(
+                f"  [green]+[/green] [bold]{job.title[:50]}[/bold] — "
+                f"{job.company[:30]}  [dim]({job.source.value if hasattr(job.source, 'value') else job.source})[/dim]"
+            )
+        if new_count > 25:
+            console.print(f"  [dim]... and {new_count - 25} more[/dim]")
 
     # Score all unscored jobs — includes carry-overs from previous runs where scoring was skipped
     unscored = db.get_by_status(ApplicationStatus.NEW)
@@ -443,8 +464,12 @@ def cmd_scrape_and_score(config: AppConfig, db: Database, agents: dict, client: 
         else:
             profile = agents["profile"].load(RESUME_PATH)
 
-            def on_progress(batch_num: int, total_batches: int) -> None:
-                console.print(f"  Scoring batch [cyan]{batch_num}[/cyan]/[cyan]{total_batches}[/cyan]...")
+            def on_progress(batch_num: int, total_batches: int, batch_jobs: list) -> None:
+                console.print(f"\n  Batch [cyan]{batch_num}[/cyan]/[cyan]{total_batches}[/cyan]:")
+                for j in batch_jobs:
+                    console.print(
+                        f"    [dim]→[/dim] {j.title[:50]} — {j.company[:30]}"
+                    )
 
             agents["scoring"].score_batch(unscored, profile, db=db, on_progress=on_progress)
 
