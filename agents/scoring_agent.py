@@ -185,31 +185,52 @@ class ScoringAgent:
         """
         Sends one batch of jobs to Claude and returns a TrackScores (or None)
         for each job in the same order.
+
+        Prompt caching strategy:
+        - System prompt contains all static content (instructions + profile).
+          It is marked with cache_control so the Anthropic API reuses the compiled
+          KV cache on batches 2-N, paying only 0.1x the normal input token price.
+        - The <jobs> block changes per batch so it goes in the user message.
         """
         active_tracks = self._active_track_names()
         if not active_tracks:
             logger.warning("No career tracks enabled — nothing to score")
             return [None] * len(jobs)
 
-        # Build the <jobs> block — each job gets an index tag for mapping
+        # Build the <jobs> block for the user message — each job gets an index tag
         jobs_block = "\n\n".join(
             f'<job index="{i}">\n{self._job_summary(job)}\n</job>'
             for i, job in enumerate(jobs)
         )
 
+        # System prompt: static content only (no jobs) — fully cacheable across batches
         prompt = self.loader.load(
             "score_job",
             profile=self._profile_summary(profile),
-            jobs=jobs_block,
             num_jobs=str(len(jobs)),
             tracks=", ".join(active_tracks),
             salary_min=str(self.salary_config.min_desired),
             salary_currency=self.salary_config.currency,
         )
 
+        # Wrap as a cached content block — subsequent batches reuse at ~90% cost reduction
+        system = [
+            {
+                "type": "text",
+                "text": prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+
+        # Jobs go in the user message — the only part that changes between batches
+        user = (
+            f"<jobs>\n{jobs_block}\n</jobs>\n\n"
+            f"Score these {len(jobs)} job posting(s) and return the JSON array."
+        )
+
         raw = self.client.call(
-            system=prompt,
-            user=f"Score these {len(jobs)} job posting(s) and return the JSON array.",
+            system=system,
+            user=user,
             operation="job_scoring",
         )
 
@@ -263,7 +284,44 @@ class ScoringAgent:
 
     @staticmethod
     def _profile_summary(profile: Profile) -> str:
-        return json.dumps(profile.model_dump(), indent=2, default=str)
+        """
+        Compact profile representation optimised for job scoring.
+
+        Includes only fields that directly affect scoring decisions:
+        - Current title and total experience (seniority signals)
+        - Skills and technologies (tech stack matching)
+        - Certifications (role-specific requirements)
+        - Experience history with technologies and descriptions (domain fit)
+        - Headline and summary (context and self-positioning)
+
+        Excludes: email, location, education, raw start/end years.
+        Computes `years` per role so Claude can assess seniority directly.
+
+        This trimmed representation is also more cache-efficient — smaller
+        payload means a smaller cache write on the first batch call.
+        """
+        data = {
+            "current_title": profile.current_title,
+            "total_years_experience": round(profile.total_years_experience, 1),
+            "headline": profile.headline,
+            "summary": profile.summary,
+            "skills": profile.skills,
+            "certifications": [
+                {"name": c.name, "issuer": c.issuer}
+                for c in profile.certifications
+            ],
+            "experience": [
+                {
+                    "title": e.title,
+                    "company": e.company,
+                    "years": round(e.years, 1),
+                    "technologies": e.technologies,
+                    "description": e.description,
+                }
+                for e in profile.experience
+            ],
+        }
+        return json.dumps(data, indent=2, default=str)
 
     @staticmethod
     def _job_summary(job: Job) -> str:

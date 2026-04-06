@@ -74,7 +74,7 @@ class ClaudeClient:
     def call(
         self,
         *,
-        system: str,
+        system: str | list,
         user: str,
         operation: str,
     ) -> str:
@@ -82,7 +82,10 @@ class ClaudeClient:
         Makes a single Claude API call and returns the response text.
 
         Args:
-            system    : System prompt — sets Claude's role and output format.
+            system    : System prompt. Pass a plain string for a standard call.
+                        Pass a list of content block dicts to use prompt caching —
+                        e.g. [{"type": "text", "text": "...", "cache_control": {"type": "ephemeral"}}].
+                        The Anthropic SDK accepts both forms natively.
             user      : User message — the actual content to process.
             operation : One of 'resume_parsing', 'job_scoring', 'resume_tailoring'.
                         Used to look up max_tokens and temperature from config.
@@ -106,11 +109,13 @@ class ClaudeClient:
             )
 
         logger.debug(
-            "Claude call | operation=%s | model=%s | max_tokens=%d | temperature=%.1f",
+            "Claude call | operation=%s | model=%s | max_tokens=%d | temperature=%.1f | cached=%s",
             operation, self.config.model, max_tokens, temperature,
+            isinstance(system, list),
         )
 
-        # Make the API call using the messages endpoint
+        # Make the API call using the messages endpoint.
+        # system accepts both str and list[dict] — the SDK handles both.
         message = self._client.messages.create(
             model=self.config.model,
             max_tokens=max_tokens,
@@ -120,22 +125,26 @@ class ClaudeClient:
         )
 
         # Extract text from the first content block
-        # Claude always returns at least one text block for our use case
         response_text = message.content[0].text
 
-        input_tokens  = message.usage.input_tokens
-        output_tokens = message.usage.output_tokens
+        input_tokens       = message.usage.input_tokens
+        output_tokens      = message.usage.output_tokens
+        # Cache tokens are only present when prompt caching is active
+        cache_write_tokens = getattr(message.usage, "cache_creation_input_tokens", 0) or 0
+        cache_read_tokens  = getattr(message.usage, "cache_read_input_tokens",     0) or 0
 
         logger.debug(
-            "Claude response | operation=%s | input_tokens=%d | output_tokens=%d",
-            operation, input_tokens, output_tokens,
+            "Claude response | operation=%s | input=%d | output=%d | cache_write=%d | cache_read=%d",
+            operation, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
         )
 
         # Accumulate into the per-operation usage store
         if operation not in self._usage:
-            self._usage[operation] = {"input": 0, "output": 0}
-        self._usage[operation]["input"]  += input_tokens
-        self._usage[operation]["output"] += output_tokens
+            self._usage[operation] = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}
+        self._usage[operation]["input"]       += input_tokens
+        self._usage[operation]["output"]      += output_tokens
+        self._usage[operation]["cache_write"] += cache_write_tokens
+        self._usage[operation]["cache_read"]  += cache_read_tokens
 
         return response_text
 

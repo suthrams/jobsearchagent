@@ -342,8 +342,10 @@ def _is_recommended(job) -> bool:
 # ─── Cost estimation ──────────────────────────────────────────────────────────
 
 # Claude Sonnet 4.6 pricing (USD per million tokens, as of 2025)
-_INPUT_COST_PER_MTOK = 3.00
-_OUTPUT_COST_PER_MTOK = 15.00
+_INPUT_COST_PER_MTOK       = 3.00   # standard input
+_OUTPUT_COST_PER_MTOK      = 15.00  # output
+_CACHE_WRITE_COST_PER_MTOK = 3.75   # prompt cache write (first call, 25% premium)
+_CACHE_READ_COST_PER_MTOK  = 0.30   # prompt cache read (subsequent calls, 90% discount)
 
 # Rough token estimates per batch of BATCH_SIZE jobs
 _EST_INPUT_TOKENS_PER_BATCH = 4_000   # profile + 5 job descriptions + prompt
@@ -363,11 +365,22 @@ def estimate_scoring_cost(num_jobs: int, batch_size: int) -> tuple[float, int]:
     return cost, num_batches
 
 
-def tokens_to_cost(input_tokens: int, output_tokens: int) -> float:
-    """Converts actual token counts to USD using Sonnet 4.6 pricing."""
+def tokens_to_cost(
+    input_tokens: int,
+    output_tokens: int,
+    cache_write_tokens: int = 0,
+    cache_read_tokens: int = 0,
+) -> float:
+    """
+    Converts actual token counts to USD using Sonnet 4.6 pricing.
+    Cache write tokens cost 25% more than standard input (cache population).
+    Cache read tokens cost 90% less than standard input (cache hits).
+    """
     return (
-        input_tokens  / 1_000_000 * _INPUT_COST_PER_MTOK
-        + output_tokens / 1_000_000 * _OUTPUT_COST_PER_MTOK
+        input_tokens       / 1_000_000 * _INPUT_COST_PER_MTOK
+        + output_tokens    / 1_000_000 * _OUTPUT_COST_PER_MTOK
+        + cache_write_tokens / 1_000_000 * _CACHE_WRITE_COST_PER_MTOK
+        + cache_read_tokens  / 1_000_000 * _CACHE_READ_COST_PER_MTOK
     )
 
 
@@ -456,13 +469,19 @@ def cmd_scrape_and_score(config: AppConfig, db: Database, agents: dict, client: 
 
     # Pull actual token usage accumulated across all Claude calls this run
     usage = client.get_usage()
-    scoring  = usage.get("job_scoring",       {"input": 0, "output": 0})
-    parsing  = usage.get("resume_parsing",    {"input": 0, "output": 0})
-    tailoring = usage.get("resume_tailoring", {"input": 0, "output": 0})
+    _zero = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}
+    scoring   = usage.get("job_scoring",       dict(_zero))
+    parsing   = usage.get("resume_parsing",    dict(_zero))
+    tailoring = usage.get("resume_tailoring",  dict(_zero))
 
-    total_input  = scoring["input"]  + parsing["input"]  + tailoring["input"]
-    total_output = scoring["output"] + parsing["output"] + tailoring["output"]
-    actual_cost_from_tokens = tokens_to_cost(total_input, total_output)
+    total_input       = scoring["input"]       + parsing["input"]       + tailoring["input"]
+    total_output      = scoring["output"]      + parsing["output"]      + tailoring["output"]
+    total_cache_write = scoring["cache_write"] + parsing["cache_write"] + tailoring["cache_write"]
+    total_cache_read  = scoring["cache_read"]  + parsing["cache_read"]  + tailoring["cache_read"]
+
+    actual_cost_from_tokens = tokens_to_cost(
+        total_input, total_output, total_cache_write, total_cache_read
+    )
 
     # Post-run summary — surfaces what happened without requiring the user to read run.log
     if jobs_scored > 0 or jobs_skipped > 0:
@@ -471,11 +490,13 @@ def cmd_scrape_and_score(config: AppConfig, db: Database, agents: dict, client: 
             if actual_cost_from_tokens > 0
             else f"[yellow]~${actual_cost:.4f}[/yellow] (estimated)"
         )
-        token_line = ""
-        if total_input > 0:
-            token_line = (
-                f"  Tokens used   : [dim]{total_input:,}[/dim] input / "
-                f"[dim]{total_output:,}[/dim] output\n"
+        token_lines = ""
+        if total_input > 0 or total_cache_write > 0:
+            token_lines = (
+                f"  Tokens — input : [dim]{total_input:,}[/dim] regular  "
+                f"[dim]{total_cache_write:,}[/dim] cache write  "
+                f"[green]{total_cache_read:,}[/green] cache read\n"
+                f"  Tokens — output: [dim]{total_output:,}[/dim]\n"
             )
         console.print(
             f"\n[bold]Run summary[/bold]\n"
@@ -485,7 +506,7 @@ def cmd_scrape_and_score(config: AppConfig, db: Database, agents: dict, client: 
             f"  Scored        : [green]{jobs_scored}[/green]\n"
             f"  Pre-filtered  : [dim]{jobs_skipped}[/dim] "
             f"(stale / no description / excluded title / non-tech)\n"
-            f"{token_line}"
+            f"{token_lines}"
             f"  API cost      : {cost_display}\n"
             f"  Full log      : [dim]output/logs/run.log[/dim]"
         )

@@ -1,13 +1,17 @@
-# Score Job Prompt (Batch)
+# Score Job Prompt (Batch) — System
 # ─────────────────────────────────────────────────────────────────────────────
 # System prompt for scoring up to 5 job postings in a single Claude call.
-# Variables: {{profile}}, {{jobs}}, {{num_jobs}}, {{tracks}}, {{salary_min}}, {{salary_currency}}
+# Variables: {{profile}}, {{num_jobs}}, {{tracks}}, {{salary_min}}, {{salary_currency}}
+#
+# The <jobs> block is intentionally NOT in this template — it is passed in the
+# user message instead. This keeps the system prompt static across all batches
+# in a run, making the full prompt eligible for Anthropic prompt caching.
 # ─────────────────────────────────────────────────────────────────────────────
 
 You are a senior career advisor scoring job postings against a candidate profile. Return only valid JSON — no explanation, no markdown, no preamble.
 
 <instructions>
-Score each of the {{num_jobs}} job posting(s) below against the active career tracks in <tracks/>.
+Score each of the {{num_jobs}} job posting(s) provided in the user message against the active career tracks in <tracks/>.
 
 For each job produce a score object with:
 - job_index: the 0-based integer matching the <job index="N"> tag
@@ -46,7 +50,3 @@ Return a JSON ARRAY with exactly {{num_jobs}} object(s), one per job, in the sam
 <profile>
 {{profile}}
 </profile>
-
-<jobs>
-{{jobs}}
-</jobs>
