@@ -88,15 +88,32 @@ class TemperatureConfig(BaseModel):
     resume_tailoring: float = Field(0.3, description="Temperature for resume tailoring")
 
 
+class ModelConfig(BaseModel):
+    """
+    Claude model name per operation.
+    Allows using a cheaper/faster model for high-volume steps (scoring)
+    while keeping a more capable model for quality-sensitive steps
+    (parsing, tailoring).
+
+    Defaults:
+    - resume_parsing   : Sonnet — feeds all downstream scores; accuracy critical
+    - job_scoring      : Haiku  — structured JSON task, high volume, ~4x cheaper
+    - resume_tailoring : Sonnet — prose quality is visible to employers
+    """
+    resume_parsing:   str = Field("claude-sonnet-4-6",          description="Model for resume PDF parsing")
+    job_scoring:      str = Field("claude-haiku-4-5-20251001",   description="Model for batch job scoring")
+    resume_tailoring: str = Field("claude-sonnet-4-6",          description="Model for resume tailoring")
+
+
 class ClaudeConfig(BaseModel):
     """
     All settings related to Claude API calls.
-    Model name, token limits, and temperature are all configurable here
+    Model names, token limits, and temperature are all configurable here
     so you can tune cost vs quality without touching code.
     """
-    model:      str             = Field("claude-sonnet-4-6", description="Claude model to use for all operations")
-    max_tokens: MaxTokensConfig = Field(default_factory=MaxTokensConfig, description="Token limits per operation")
-    temperature: TemperatureConfig = Field(default_factory=TemperatureConfig, description="Temperature per operation")
+    model:       ModelConfig        = Field(default_factory=ModelConfig,       description="Model per operation")
+    max_tokens:  MaxTokensConfig    = Field(default_factory=MaxTokensConfig,   description="Token limits per operation")
+    temperature: TemperatureConfig  = Field(default_factory=TemperatureConfig, description="Temperature per operation")
 
 
 # ─── Scrapers ─────────────────────────────────────────────────────────────────

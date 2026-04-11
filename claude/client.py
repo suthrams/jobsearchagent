@@ -102,10 +102,11 @@ class ClaudeClient:
             anthropic.APIError  : If all retry attempts are exhausted.
         """
         # Look up per-operation settings from config
+        model       = getattr(self.config.model,       operation, None)
         max_tokens  = getattr(self.config.max_tokens,  operation, None)
         temperature = getattr(self.config.temperature, operation, None)
 
-        if max_tokens is None or temperature is None:
+        if model is None or max_tokens is None or temperature is None:
             raise ValueError(
                 f"Unknown operation '{operation}'. "
                 "Must be one of: resume_parsing, job_scoring, resume_tailoring."
@@ -113,14 +114,14 @@ class ClaudeClient:
 
         logger.debug(
             "Claude call | operation=%s | model=%s | max_tokens=%d | temperature=%.1f | cached=%s",
-            operation, self.config.model, max_tokens, temperature,
+            operation, model, max_tokens, temperature,
             isinstance(system, list),
         )
 
         # Make the API call using the messages endpoint.
         # system accepts both str and list[dict] — the SDK handles both.
         message = self._client.messages.create(
-            model=self.config.model,
+            model=model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system,

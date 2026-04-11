@@ -57,12 +57,18 @@ tracks:
 
 # ─── Claude Settings ──────────────────────────────────────────────────────────
 claude:
-  model: claude-sonnet-4-6
+  # Model per operation — tune cost vs quality independently.
+  # Haiku is ~4x cheaper than Sonnet and handles structured scoring well.
+  # Sonnet is kept for parsing (feeds all scores) and tailoring (employer-facing prose).
+  model:
+    resume_parsing:   claude-sonnet-4-6           # accuracy critical — feeds all scores
+    job_scoring:      claude-haiku-4-5-20251001   # structured JSON task, high volume
+    resume_tailoring: claude-sonnet-4-6           # prose quality visible to employers
 
   # Token limits per operation — keeps costs predictable
   max_tokens:
     resume_parsing: 1000
-    job_scoring: 1000
+    job_scoring: 3500
     resume_tailoring: 2000
 
   # Temperature per operation — lower = more consistent JSON output

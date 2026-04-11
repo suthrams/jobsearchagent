@@ -51,11 +51,13 @@ On every successful call, four token counts from `message.usage` are accumulated
 
 `operation` maps to per-operation settings in `config.yaml`:
 
-| Operation | max_tokens | temperature |
-|---|---|---|
-| `resume_parsing` | 1,000 | 0.1 |
-| `job_scoring` | 2,000 | 0.1 |
-| `resume_tailoring` | 2,000 | 0.3 |
+| Operation | model (default) | max_tokens | temperature |
+|---|---|---|---|
+| `resume_parsing` | `claude-sonnet-4-6` | 1,000 | 0.1 |
+| `job_scoring` | `claude-haiku-4-5-20251001` | 3,500 | 0.1 |
+| `resume_tailoring` | `claude-sonnet-4-6` | 2,000 | 0.3 |
+
+All three settings are looked up via `getattr` on the respective config object, keyed by operation name. An unknown operation name raises `ValueError` before any API call is made.
 
 ### `get_usage() → dict[str, dict[str, int]]`
 
