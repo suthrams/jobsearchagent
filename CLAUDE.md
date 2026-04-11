@@ -11,7 +11,7 @@ Python tool that scores jobs against your profile across three career tracks:
 - All Claude responses are JSON validated by Pydantic
 - Prompts live in `prompts/*.md` as XML-tagged templates
 - LinkedIn handled manually via `inbox/linkedin.txt`
-- Model: `claude-sonnet-4-6`
+- Models: `claude-sonnet-4-6` (parsing, tailoring) · `claude-haiku-4-5-20251001` (scoring) — configurable per operation in `config.yaml` under `claude.model`
 
 ## Running the agent
 ```bash

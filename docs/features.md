@@ -247,7 +247,9 @@ All settings live in `config/config.yaml`. Copy `config/config.example.yaml` to 
 | `scrapers.adzuna.locations` | Cities to search (one API call per title × location) |
 | `scrapers.adzuna.radius_km` | Search radius around each city |
 | `scrapers.adzuna.remote_keywords` | Keywords for US-wide remote searches |
-| `claude.model` | Claude model used for all operations (default: `claude-sonnet-4-6`) |
+| `claude.model.resume_parsing` | Model for resume parsing (default: `claude-sonnet-4-6`) |
+| `claude.model.job_scoring` | Model for batch scoring (default: `claude-haiku-4-5-20251001`) |
+| `claude.model.resume_tailoring` | Model for resume tailoring (default: `claude-sonnet-4-6`) |
 | `staleness.max_days` | Jobs older than this are skipped during scoring (default: 30) |
 
 ### API keys required

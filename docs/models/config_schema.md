@@ -56,9 +56,16 @@ Controls which career tracks are scored. Disabling a track saves API tokens.
 ### `ClaudeConfig`
 | Field | Default | Meaning |
 |---|---|---|
-| `model` | `"claude-sonnet-4-6"` | Claude model for all operations |
+| `model` | `ModelConfig` | Per-operation model names |
 | `max_tokens` | `MaxTokensConfig` | Per-operation token limits |
 | `temperature` | `TemperatureConfig` | Per-operation temperatures |
+
+#### `ModelConfig`
+| Operation | Default | Rationale |
+|---|---|---|
+| `resume_parsing` | `claude-sonnet-4-6` | Accuracy critical — feeds all downstream scores |
+| `job_scoring` | `claude-haiku-4-5-20251001` | Structured JSON task, high volume, ~4x cheaper than Sonnet |
+| `resume_tailoring` | `claude-sonnet-4-6` | Prose quality visible to employers |
 
 #### `MaxTokensConfig`
 | Operation | Default | Rationale |
@@ -105,7 +112,9 @@ Controls which career tracks are scored. Disabling a track saves API tokens.
 config = AppConfig.model_validate(yaml.safe_load(config_file))
 
 # Typed access — IDE autocomplete works
-config.claude.model           # "claude-sonnet-4-6"
+config.claude.model.job_scoring      # "claude-haiku-4-5-20251001"
+config.claude.model.resume_parsing   # "claude-sonnet-4-6"
+config.claude.model.resume_tailoring # "claude-sonnet-4-6"
 config.scrapers.adzuna.country # "us"
 config.tracks.ic               # True
 config.salary.min_desired      # 150000

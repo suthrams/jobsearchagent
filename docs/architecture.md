@@ -91,7 +91,7 @@ graph TB
     end
 
     subgraph EXTERNAL["External Services"]
-        ANTHROPIC["Anthropic API\nclaude-sonnet-4-6"]
+        ANTHROPIC["Anthropic API\nSonnet (parsing/tailoring)\nHaiku (scoring)"]
         ADZUNA_API["Adzuna REST API\nper location × keyword"]
     end
 
