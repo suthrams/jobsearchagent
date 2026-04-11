@@ -22,8 +22,9 @@
 
 - My first article covered 8 agentic AI patterns I used to build a job search agent
 - This is the follow-up: what happened when I actually ran it, hit real bugs, and had to evolve the design
-- 4 new production lessons, each one grounded in a deeper agentic AI pattern
-- The underlying theme: the gap between a prototype and a production agent comes down to observability, precision, and knowing exactly where humans should sit in the loop
+- 6 new production patterns across Memory, Control, and Security — a layer most agentic AI content skips entirely
+- The underlying theme: the gap between a prototype and a production agent comes down to observability, precision, security, and knowing exactly where humans should sit in the loop
+- Each pattern includes further reading so you can go deeper on the concepts that matter to you
 
 ---
 
@@ -142,6 +143,11 @@ Cache keys are exact. Any variable in a cached prompt that changes between calls
 
 This is a specific instance of the broader **Context Window Management** pattern. Deliberately partition your prompt into stable and variable sections so you can optimize each one independently. Stable context belongs in the system prompt. Dynamic context belongs in the user turn.
 
+> **Further reading**
+> - Anthropic. *Prompt caching.* Anthropic Developer Documentation. docs.anthropic.com/en/docs/build-with-claude/prompt-caching — The technical reference for Anthropic's server-side KV cache: eligible content, cache lifetime, pricing, and the `cache_control` header.
+> - Anthropic. *Building effective agents.* anthropic.com/research/building-effective-agents — The section on parallelization explains how prompt caching interacts with concurrent subagent calls, which is directly relevant if you run batches in parallel.
+> - Yan, Eugene. *Patterns for Building LLM-based Systems and Products.* eugeneyan.com/writing/llm-patterns/ — Covers caching strategies broadly, including the distinction between output caching (Cache-Aside) and input caching (prompt caching).
+
 ---
 
 ## PATTERN 10: Human-in-the-Loop Curation
@@ -201,6 +207,11 @@ This is the **Human-in-the-Loop** pattern, but the specific variant matters more
 | **Curation loop** | After results are produced | Scales well, improves signal quality over time |
 
 A job search tool does not need an approval gate. The stakes are low and the volume is high. But curation is genuinely valuable here: each exclusion permanently improves the signal-to-noise ratio for every future run. The AI handles broad relevance filtering at scale. The human handles the contextual judgment calls the AI cannot make. Neither is trying to do the other's job.
+
+> **Further reading**
+> - Anthropic. *Building effective agents.* anthropic.com/research/building-effective-agents — The "Human-in-the-loop" section distinguishes between agents that pause for approval versus agents that surface results for human review. The curation pattern sits firmly in the second category.
+> - Amershi, Saleema et al. *Guidelines for Human-AI Interaction.* CHI 2019, Microsoft Research. — 18 design guidelines covering when and how humans should be involved in AI decisions. Guidelines 3 (time-based actions) and 14 (encourage user feedback) are directly applicable to curation loops.
+> - Weng, Lilian. *LLM Powered Autonomous Agents.* lilianweng.github.io/posts/2023-06-23-agent/ — The memory and planning sections explain why fully automated agents accumulate noise over time and why human feedback channels matter for sustained accuracy.
 
 ---
 
@@ -263,6 +274,11 @@ Observability is not an optional add-on in production agents. Every agent action
 
 This is the **Agent Monitoring** pattern. It sits alongside the Evaluator pattern in the agentic AI literature. The difference is that Evaluator judges output quality, while Agent Monitoring tracks resource consumption. In production you need both.
 
+> **Further reading**
+> - Huyen, Chip. *AI Engineering.* O'Reilly Media, 2025. — Chapter on model deployment covers cost management, token budget patterns, and the distinction between estimated and actual costs. The most thorough practical treatment of LLM observability currently available.
+> - Anthropic. *Token usage.* Anthropic Developer Documentation. docs.anthropic.com/en/docs/build-with-claude/token-counting — Documents the `usage` object returned in every API response, including `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`. The fields used directly in this pattern.
+> - OpenAI. *A Practical Guide to Building Agents.* openai.com/index/practical-guide-to-building-agents — The observability and guardrails sections cover why named operations and per-step tracking are necessary for production agent systems, with examples applicable across providers.
+
 ---
 
 ## PATTERN 12: Timestamp Precision in Event-Sourced Pipelines
@@ -315,6 +331,11 @@ In event-sourced pipelines, when you record state matters as much as what you re
 This extends the **Pipeline State Machine** pattern from the first article. The pattern tells you to track explicit states with intentional transitions. What it does not spell out is that the anchor timestamp for a run is a boundary, not a summary. It must be captured before any work begins, not after the work completes.
 
 The same class of bug appears in many forms. A cache invalidation timestamp that is set after data is written rather than before. A processing window anchor that is captured at the end of a job rather than the start. A retry window that begins after the first attempt instead of before it. The fix is always the same: record the boundary before you cross it.
+
+> **Further reading**
+> - Fowler, Martin. *Event Sourcing.* martinfowler.com/eaaDev/EventSourcing.html — The canonical description of event sourcing and why event ordering is not a detail but a fundamental constraint. The timestamp bug in this pattern is a direct instance of the ordering requirements described here.
+> - Kleppmann, Martin. *Designing Data-Intensive Applications.* O'Reilly Media, 2017. Chapter 8: The Trouble with Distributed Systems. — The most rigorous treatment of clock skew, ordering anomalies, and why "capture the time before the event" is a hard rule in any system where events are compared across a time axis.
+> - Fowler, Martin. *Temporal Patterns.* martinfowler.com/eaaDev/index.html — A catalog of patterns for working with time in software systems, including Bi-temporal objects and Audit Log. The anchor timestamp pattern is a simplified variant of these more general techniques.
 
 ---
 
@@ -478,6 +499,11 @@ Second, explicit distrust: tell the model, in the system prompt, that content in
 
 Neither layer is sufficient on its own. Together they make injection attacks substantially harder to pull off without requiring a new framework or external guardrail service.
 
+> **Further reading**
+> - OWASP. *LLM01: Prompt Injection.* OWASP Top 10 for Large Language Model Applications, 2025. owasp.org/www-project-top-10-for-large-language-model-applications/ — The definitive classification of prompt injection as the top LLM application risk. Covers both direct injection (malicious user input) and indirect injection (attacker-controlled content in external data), with mitigation guidance.
+> - Greshake, Kai et al. *Not What You've Signed Up For: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection.* arXiv:2302.12173, 2023. arxiv.org/abs/2302.12173 — The foundational research demonstrating how content retrieved from external sources (web pages, documents, API responses) can be weaponised to hijack LLM-integrated applications. Directly applicable to any agent that processes third-party text.
+> - Willison, Simon. *Prompt injection attacks against GPT-3.* simonwillison.net — Simon Willison has written the most comprehensive real-world coverage of prompt injection incidents and mitigations. His blog (simonwillison.net) covers new attack vectors as they emerge, and is the most practical ongoing resource for staying current on this threat.
+
 ---
 
 ## PATTERN 14: Data Minimization Before LLM Context
@@ -596,6 +622,11 @@ Before any data reaches the LLM context window, ask: does this task actually req
 This is a specific application of the data minimization principle from privacy engineering, applied to the prompt layer of an agentic system. The rule is simple: strip everything from the context that is not required for the task. PII fields are the obvious candidates. But the same discipline applies to any large or sensitive content. Smaller context means lower cost, faster cache writes, and a smaller blast radius if something goes wrong.
 
 The pattern pairs naturally with Prompt Injection Defense. One limits what can go wrong if the prompt boundary is crossed. The other limits the damage if it is.
+
+> **Further reading**
+> - GDPR Article 5(1)(c). *Data minimisation principle.* General Data Protection Regulation, European Union. gdpr-info.eu/art-5-gdpr/ — The legal basis for data minimization: personal data must be adequate, relevant, and limited to what is necessary for the purpose. The same principle applied at the prompt layer is the engineering implementation of this legal requirement.
+> - ENISA. *Data Minimisation in Practice.* European Union Agency for Cybersecurity, 2023. enisa.europa.eu — Practical guidance on applying data minimization across system and API boundaries. The prompt-layer minimization pattern is a direct application of these principles to LLM context windows.
+> - Weng, Lilian. *LLM Powered Autonomous Agents.* lilianweng.github.io/posts/2023-06-23-agent/ — The section on memory components describes the types of information agents carry in their context windows. The data minimization principle applies to every memory type: only include what the current task step requires.
 
 ---
 
