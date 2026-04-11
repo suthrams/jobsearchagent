@@ -482,9 +482,22 @@ if view == "New Jobs":
         scored_new = new_df[scored_mask].copy()
         if not scored_new.empty:
             st.subheader(f"Scored ({len(scored_new)})")
-            scored_new["salary"] = scored_new["salary_json"].apply(
-                lambda x: "" if not x else (lambda s: f"{s.get('currency','')} {s.get('min','?'):,}–{s.get('max','?'):,}" if s.get("min") or s.get("max") else "")(json.loads(x)) if x else ""
-            )
+            def _fmt_sal(x):
+                if not x:
+                    return ""
+                try:
+                    s = json.loads(x)
+                    lo, hi, cur = s.get("min"), s.get("max"), s.get("currency", "USD")
+                    if lo and hi:
+                        return f"{cur} {lo:,} – {hi:,}"
+                    if lo:
+                        return f"{cur} {lo:,}+"
+                    if hi:
+                        return f"up to {cur} {hi:,}"
+                except Exception:
+                    pass
+                return ""
+            scored_new["salary"] = scored_new["salary_json"].apply(_fmt_sal)
             display_scored = scored_new[[
                 "id", "title", "company", "location",
                 "score_ic", "score_architect", "score_management", "score_best",
