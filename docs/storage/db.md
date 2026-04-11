@@ -42,6 +42,7 @@ Opens or creates the database file. Creates the jobs table if it doesn't exist. 
 | `update_job(job)` | Updates all fields of an existing job. Requires `job.id` to be set. |
 | `upsert_job(job) → Job` | Inserts if new (by URL), updates if exists. Convenience wrapper. |
 | `insert_run(run_at, ...) → int` | Records one agent execution in the `runs` table. `run_at` must be captured **before scraping begins** so the dashboard `New Jobs` query (`WHERE found_at >= run_at`) correctly returns all jobs from that run. Returns the new run id. |
+| `exclude_jobs(job_ids, reason)` | Marks a list of job IDs as excluded, recording the reason string. Uses `executemany` for efficiency. Excluded jobs are filtered out of all dashboard queries. |
 
 ### Read Operations
 
@@ -82,9 +83,13 @@ CREATE TABLE jobs (
     score_ic         INTEGER,                   -- denormalised for fast queries
     score_architect  INTEGER,
     score_management INTEGER,
-    score_best       INTEGER                    -- max(ic, architect, management)
+    score_best       INTEGER,                   -- max(ic, architect, management)
+    excluded         INTEGER NOT NULL DEFAULT 0, -- 1 = excluded from all views
+    excluded_reason  TEXT                        -- e.g. 'Rejected', 'Not a good fit'
 )
 ```
+
+`excluded` and `excluded_reason` are added via `_MIGRATIONS` on first startup after the schema upgrade. All dashboard queries filter these rows out with `WHERE excluded = 0 OR excluded IS NULL`.
 
 ### `runs` table
 
@@ -109,11 +114,46 @@ CREATE TABLE runs (
     tokens_output_parsing   INTEGER NOT NULL DEFAULT 0,
     tokens_input_tailoring  INTEGER NOT NULL DEFAULT 0,
     tokens_output_tailoring INTEGER NOT NULL DEFAULT 0,
-    actual_cost_usd         REAL    NOT NULL DEFAULT 0.0  -- cost from real token counts
+    actual_cost_usd         REAL    NOT NULL DEFAULT 0.0, -- cost from real token counts
+    -- Phase timing and throughput metrics (added via _RUNS_MIGRATIONS)
+    elapsed_scrape_s        REAL    NOT NULL DEFAULT 0.0, -- wall-clock seconds for scraping
+    elapsed_score_s         REAL    NOT NULL DEFAULT 0.0, -- wall-clock seconds for scoring
+    elapsed_total_s         REAL    NOT NULL DEFAULT 0.0, -- total run wall-clock seconds
+    avg_batch_latency_s     REAL    NOT NULL DEFAULT 0.0, -- mean Claude API call latency
+    jobs_per_second         REAL    NOT NULL DEFAULT 0.0  -- scoring throughput
 )
 ```
 
 `actual_cost_usd` uses the same Sonnet 4.6 pricing as the estimate ($3/M input, $15/M output) but is derived from real token counts returned by the API. The dashboard prefers `actual_cost_usd` over `est_cost_usd` whenever it is non-zero.
+
+The five timing columns are populated by `main.py` after scoring completes, reading `ScoringAgent.last_run_stats` for per-scoring-phase metrics and wrapping the full run in `time.perf_counter()` calls. All five are added via `_RUNS_MIGRATIONS` — rows from runs before the upgrade retain default `0.0` and are excluded from latency charts via the `has_latency_data` check in the dashboard.
+
+### `insert_run()` Signature
+
+```python
+def insert_run(
+    self,
+    run_at: datetime,
+    jobs_scraped: int = 0,
+    jobs_new: int = 0,
+    jobs_scored: int = 0,
+    jobs_skipped: int = 0,
+    batches: int = 0,
+    est_cost_usd: float = 0.0,
+    tokens_input_scoring: int = 0,
+    tokens_output_scoring: int = 0,
+    tokens_input_parsing: int = 0,
+    tokens_output_parsing: int = 0,
+    tokens_input_tailoring: int = 0,
+    tokens_output_tailoring: int = 0,
+    actual_cost_usd: float = 0.0,
+    elapsed_scrape_s: float = 0.0,
+    elapsed_score_s: float = 0.0,
+    elapsed_total_s: float = 0.0,
+    avg_batch_latency_s: float = 0.0,
+    jobs_per_second: float = 0.0,
+) -> int
+```
 
 ## Serialisation
 

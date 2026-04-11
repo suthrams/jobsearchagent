@@ -73,14 +73,18 @@ Each job is scored against your profile independently on three career tracks usi
 | **Management** | Senior Manager, Director of Engineering, VP of Engineering |
 
 ### How scoring works
-- Up to 10 jobs are sent to Claude in a single API call (batched fan-out)
+- Jobs are chunked into batches of 10 and submitted to Claude concurrently — up to 3 parallel API calls at a time via `ThreadPoolExecutor`
 - Each job receives a score of 0–100 per enabled track, a one-sentence summary, and a recommended flag (score ≥ 65)
 - Salary penalty: Claude deducts 10 points and notes it in the summary if the posted salary is below your configured minimum
 - Staleness note: Claude notes in the summary if a recommended job is more than 30 days old
 - Scores are saved to the database immediately after each batch — if the run is interrupted, already-scored jobs are preserved
+- One failed batch does not cancel others — it stays `NEW` and is retried on the next run
+
+### Parallel batching
+Up to `MAX_PARALLEL_BATCHES = 3` Claude calls run concurrently (safe for free-tier RPM). For a typical 30-job run this reduces wall-clock scoring time from ~45s to ~15s.
 
 ### Prompt caching
-The Claude system prompt is byte-identical across all batches in a run (job count is passed only in the user message), so Anthropic's prompt caching applies to every batch — not just the first — reducing input token costs significantly.
+The Claude system prompt is byte-identical across all batches in a run (job count is passed only in the user message), so Anthropic's prompt caching applies to every batch including parallel ones — reducing input token cost by ~90% on cache hits.
 
 ---
 
@@ -182,6 +186,11 @@ Every `python main.py` run is recorded in the database and displayed in the **Ru
 | Batches | Number of Claude API calls made |
 | Estimated cost | Conservative pre-run estimate shown before scoring begins |
 | Actual cost | Calculated from real token usage after the run |
+| Scrape time | Wall-clock seconds for the scraping phase |
+| Score time | Wall-clock seconds for the scoring phase |
+| Total time | Full run wall-clock seconds |
+| Avg batch latency | Mean Claude API call duration in seconds |
+| Throughput | Jobs scored per second |
 
 ### Token tracking
 Input and output tokens are tracked separately for each operation (resume parsing, job scoring, resume tailoring) and displayed in the Run History view. A cumulative actual cost line is plotted over time.
@@ -260,12 +269,13 @@ ADZUNA_APP_KEY=your_api_key
 | US-wide remote search | ✅ |
 | Two-layer noise filtering (title + description) | ✅ |
 | AI scoring across 3 career tracks | ✅ |
-| Batched scoring (10 jobs per Claude call) | ✅ |
-| Prompt caching for cost reduction | ✅ |
+| Parallel batched scoring (3 concurrent Claude calls) | ✅ |
+| Prompt caching for cost reduction (~90% on cache reads) | ✅ |
 | Browser dashboard with 7 views | ✅ |
 | Multi-select job exclusion from dashboard | ✅ |
 | Resume tailoring (CLI + dashboard) | ✅ |
-| Run history with token + cost tracking | ✅ |
+| Run history with token + cost + latency tracking | ✅ |
+| Phase timing and throughput metrics | ✅ |
 | Profile caching (no repeat API calls for resume) | ✅ |
 | SQLite persistence with automatic schema migration | ✅ |
 | Pre-run cost estimate with confirmation gate | ✅ |

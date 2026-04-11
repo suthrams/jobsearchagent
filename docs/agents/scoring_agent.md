@@ -2,37 +2,51 @@
 
 ## Purpose
 
-Scores job postings against the candidate's profile across all active career tracks (IC, Architect, Management). Sends up to **5 jobs per Claude call** to minimise API cost while still getting individual scores for each job.
+Scores job postings against the candidate's profile across all active career tracks (IC, Architect, Management). Sends up to **10 jobs per Claude call** and fires all batches **concurrently** using `ThreadPoolExecutor` to minimise latency.
 
 ## Agentic Patterns
 
-### 1. Batched Fan-Out
-Instead of one Claude call per job, jobs are grouped into batches of 10 (`BATCH_SIZE = 10`). Each job in the batch gets an XML index tag (`<job index="0">`, `<job index="1">`, etc.) so Claude can return an array and scores can be mapped back even if Claude reorders items.
+### 1. Parallel Batched Fan-Out
+
+Jobs are chunked into batches of `BATCH_SIZE = 10` and submitted to Claude concurrently — up to `MAX_PARALLEL_BATCHES = 3` at a time. All batches are independent: they share the same cached system prompt but carry different job sets in the user message.
 
 ```
-50 jobs →  5 batches of 10 →  5 Claude calls
-vs.
-50 jobs → 50 Claude calls   (without batching)
+50 jobs  →  5 batches of 10  →  submitted concurrently (3 + 2)
+                                 ├─ batch 1 ─┐
+                                 ├─ batch 2 ─┤ → fire together (~15s wall time)
+                                 └─ batch 3 ─┘
+                                 ├─ batch 4 ─┐
+                                 └─ batch 5 ─┘ → fire together (~15s wall time)
+                                                Total: ~30s vs ~75s sequential
 ```
 
-**Cache correctness:** `num_jobs` is intentionally absent from the system prompt. Including it caused a cache miss on the last batch of every run (e.g. "Score these 3 jobs" ≠ "Score these 10 jobs" → different cache key → full input charge). The count is passed in the user message only, keeping the system prompt byte-identical across all batches.
+**Thread safety:**
+- `ClaudeClient._usage` is protected by `threading.Lock` — concurrent `+=` on shared counters would lose increments without it.
+- `db.update_job()` calls are serialised with a per-`score_batch()` `threading.Lock` — SQLite WAL mode allows concurrent reads but still serialises commits.
+
+**Cache correctness:** `num_jobs` is intentionally absent from the system prompt. Including it caused a cache miss on the last batch (e.g. "Score these 7 jobs" ≠ "Score these 10 jobs" → different cache key → full input charge on every last batch). The count is passed in the user message only, keeping the system prompt byte-identical across all concurrent batches so all share the same Anthropic prompt cache key.
+
+**Fault isolation:** Each future is caught independently via `as_completed()`. One batch failing after all retries does not cancel other in-flight batches. Jobs in a failed batch stay `NEW` and are retried on the next run.
 
 ### 2. Pre-Filter Gate (Cheap Before Expensive)
-Two filter stages run before any Claude call, eliminating irrelevant jobs:
+
+Four filter stages run before any Claude call, eliminating irrelevant jobs:
 
 ```
 Stage 1 — is_stale?         skip jobs posted > 30 days ago
-Stage 2 — no description?   skip — Claude can't score without content
-Stage 3 — excluded title?   skip sales, civil eng, Java roles, etc.
+Stage 2 — no description?   skip — Claude cannot score without content
+Stage 3 — excluded title?   skip sales, civil eng, property managers, etc.
 Stage 4 — tech description? at least one tech keyword must appear
                              catches hotel maintenance, plumbing, etc.
 ```
 
 ### 3. Multi-Track Scoring
-A single Claude call returns scores for all three tracks simultaneously. The prompt lists active tracks; Claude returns `null` for disabled tracks. This avoids 3× the API calls that a per-track approach would require.
+
+A single Claude call returns scores for all three tracks simultaneously. The prompt lists active tracks; Claude returns `null` for disabled tracks. This avoids 3x the API calls that a per-track approach would require.
 
 ### 4. Crash-Safe Persistence
-After each batch is scored, `db.update_job()` is called immediately — not once at the end. If the run is interrupted mid-batch, already-scored jobs are preserved and won't be sent to Claude again.
+
+After each batch resolves, `db.update_job()` is called immediately for every scored job — not once at the end. If the run is interrupted, already-scored jobs are preserved and will not be sent to Claude again on the next run.
 
 ## Public Interface
 
@@ -45,30 +59,46 @@ After each batch is scored, `db.update_job()` is called immediately — not once
 | `jobs` | `list[Job]` | Jobs to score — must already be in the database |
 | `profile` | `Profile` | The candidate's parsed profile |
 | `db` | `Database` (optional) | If provided, each job is saved immediately after scoring |
-| `on_progress` | `Callable` (optional) | Called before each batch with `(batch_num, total_batches)` |
+| `on_progress` | `Callable` (optional) | Called before each batch fires with `(batch_num, total_batches, batch_jobs)` |
 
 Returns the same list with `scores` and `status` populated on eligible jobs.
 
+### `last_run_stats: dict`
+
+Populated after each `score_batch()` call. Read by `main.py` to persist timing data to the `runs` table.
+
+| Key | Type | Description |
+|---|---|---|
+| `elapsed_score_s` | `float` | Wall-clock seconds for the entire scoring phase |
+| `avg_batch_latency_s` | `float` | Mean seconds per Claude API call across all batches |
+| `jobs_per_second` | `float` | Scoring throughput: `jobs_scored / elapsed_score_s` |
+
+## Constants
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `BATCH_SIZE` | `10` | Max jobs per Claude call. At 10, one call is ~6,500 input + ~3,000 output tokens. |
+| `MAX_PARALLEL_BATCHES` | `3` | Concurrent Claude calls. Safe for free-tier RPM. Raise to 5 on paid tiers. |
+
 ## Filter Keywords
 
-Both filter lists live in **`models/filters.py`** — the single source of truth imported by both `ScoringAgent` and `AdzunaScraper`. Editing `models/filters.py` updates both gatekeeping layers simultaneously, preventing the drift that caused noisy jobs to reach Claude while the scraper dropped them.
+Both filter lists live in **`models/filters.py`** — the single source of truth imported by both `ScoringAgent` and `AdzunaScraper`. Editing `models/filters.py` updates both gatekeeping layers simultaneously.
 
 ### Excluded Titles (`EXCLUDED_TITLE_KEYWORDS`)
-Titles containing these strings are skipped regardless of source (LinkedIn and Adzuna both pass through this gate):
+Titles containing these strings are skipped regardless of source:
 - Sales: `presales`, `sales manager`, `sales engineer`, `account manager`, `business development`
-- Non-tech management: `property manager`, `community manager`, `leasing`, `project manager`, `program manager`, `office manager`, `operations manager`, `fundraising`, `transcription`
-- Non-software engineering: `electrical engineer`, `civil engineer`, `structural engineer`, `landscape architect`, `design specification`, `hvac`, `substation`, `medical`
+- Non-tech management: `property manager`, `community manager`, `leasing`, `project manager`, `program manager`, `office manager`, `operations manager`
+- Non-software engineering: `electrical engineer`, `civil engineer`, `structural engineer`, `landscape architect`, `hvac`, `medical`
 - Junior/unrelated: `intern`, `internship`, `associate engineer`, `hotel`
 - Language-specific: `java developer`, `java engineer`
 
 ### Required Description Keywords (`TECH_DESCRIPTION_KEYWORDS`)
-At least one of these must appear in the description. Deliberately excludes broad words like `"technology"`, `"technical"`, `" it "`, and `"information technology"` that appear in HR, biotech, and office management roles:
+At least one of these must appear in the description:
 - Languages: `software`, `python`, `javascript`, `typescript`, `.net`, `golang`, `rust`
-- Cloud/infra: `cloud`, `aws`, `azure`, `gcp`, `kubernetes`, `docker`, `terraform`, `ci/cd`, `devops`, `platform engineering`
-- Architecture: `api`, `microservice`, `distributed system`, `backend`, `frontend`, `saas`, `paas`, `application development`
-- Data/AI: `data engineering`, `data pipeline`, `machine learning`, `artificial intelligence`, ` ai `, `llm`, `database`
-- Leadership (scoped): `engineering team`, `software engineer`, `software development`, `digital transformation`
-- IoT/edge: `iot`, `internet of things`, `mqtt`, `edge computing`, `embedded`, `connected devices`, `iiot`, `device management`, `telemetry`, `firmware`
+- Cloud/infra: `cloud`, `aws`, `azure`, `gcp`, `kubernetes`, `docker`, `terraform`, `ci/cd`, `devops`
+- Architecture: `api`, `microservice`, `distributed system`, `backend`, `frontend`, `saas`
+- Data/AI: `data engineering`, `machine learning`, `artificial intelligence`, `llm`, `database`
+- IoT/edge: `iot`, `mqtt`, `edge computing`, `embedded`, `firmware`
 
 ## Claude Call Details
 
@@ -76,8 +106,8 @@ At least one of these must appear in the description. Deliberately excludes broa
 |---|---|
 | Prompt template | `prompts/score_job.md` |
 | Operation | `job_scoring` |
-| Max tokens | 3,500 (covers 10 jobs — ~300 tokens/score object) |
-| Temperature | 0.1 (consistent scoring) |
+| Max tokens | 3,500 (covers 10 jobs — ~300 tokens per score object) |
+| Temperature | 0.1 (consistent scoring across runs) |
 
 ## Data Flow
 
@@ -85,31 +115,26 @@ At least one of these must appear in the description. Deliberately excludes broa
 [list[Job]] + [Profile]
       │
       ▼
-_score_chunk(chunk, profile)
-  ├─ build jobs_block: XML with index tags
-  ├─ PromptLoader.load("score_job", profile=..., jobs=..., tracks=...)
-  ├─ ClaudeClient.call(system, user, "job_scoring")
-  └─ ResponseParser.parse_list(raw, BatchJobScore)
-       └─ returns list[BatchJobScore] mapped by job_index
-              │
-              ▼
-        TrackScores(ic, architect, management)
-              │
-              ▼
-       job.scores = track_scores
-       job.status = SCORED
-       db.update_job(job)
+Pre-filter gate (stale / no desc / excluded title / non-tech)
+      │
+      ▼
+Chunk into batches of BATCH_SIZE
+      │
+      ▼
+ThreadPoolExecutor (MAX_PARALLEL_BATCHES workers)
+  ├─ _run_batch(1, chunk_1) ──────────────────────────────────┐
+  ├─ _run_batch(2, chunk_2) ─────────────────────────────┐    │
+  └─ _run_batch(3, chunk_3) ────────────────────────┐    │    │
+                                                    │    │    │
+  Each worker:                                      ▼    ▼    ▼
+    _score_chunk(chunk, profile)             results collected
+      ├─ build jobs_block (XML index tags)   via as_completed()
+      ├─ PromptLoader.load("score_job", ...)
+      ├─ ClaudeClient.call(system, user, "job_scoring")
+      └─ ResponseParser.parse_list(raw, BatchJobScore)
+            │
+            ▼ (under db_lock)
+      job.scores = TrackScores(ic, architect, management)
+      job.status = SCORED
+      db.update_job(job)
 ```
-
-## Scoring Guidelines (from prompt)
-
-| Score range | Meaning |
-|---|---|
-| 80–100 | Excellent fit — title, skills, seniority all match |
-| 60–79 | Good fit — most requirements met, minor gaps |
-| 40–59 | Partial fit — some relevant experience, notable gaps |
-| 0–39 | Poor fit — significant mismatch |
-
-`recommended = true` when `score >= 65`.
-
-If the job salary is below `salary_config.min_desired`, Claude deducts 10 points and notes it in the summary.

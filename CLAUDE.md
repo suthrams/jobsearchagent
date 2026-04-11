@@ -36,3 +36,5 @@ python main.py --dashboard-only # launch dashboard immediately (no scraping)
 - `EXCLUDED_TITLE_KEYWORDS` and `TECH_DESCRIPTION_KEYWORDS` live **only** in `models/filters.py`. Both `scrapers/adzuna.py` and `agents/scoring_agent.py` import from there — never define local copies.
 - `run_at` in `db.insert_run()` must be captured **before** scraping begins (see `run_started_at` in `main.py`). If captured at run end, the dashboard "New Jobs" view returns empty.
 - Adzuna quota: `(len(locations) × len(keywords)) + len(remote_keywords)` must stay below 100/day (free tier).
+- `MAX_PARALLEL_BATCHES = 3` in `agents/scoring_agent.py` — safe for Anthropic free-tier RPM. Raise to 5 on paid tiers. Do not raise without also verifying RPM headroom.
+- The system prompt passed to `ClaudeClient.call()` in `ScoringAgent._score_chunk()` must remain byte-identical across all batches (including parallel ones). Never add per-batch variables (like `num_jobs`) to the system prompt — put them in the user message only.

@@ -41,13 +41,13 @@ Makes a single Claude API call using the Messages endpoint.
 
 | Parameter | Type | Purpose |
 |---|---|---|
-| `system` | `str` | System prompt — sets Claude's role and output format |
+| `system` | `str \| list` | System prompt. Pass a plain string for a standard call. Pass a list of content block dicts to use Anthropic prompt caching — e.g. `[{"type": "text", "text": "...", "cache_control": {"type": "ephemeral"}}]`. The SDK accepts both forms. |
 | `user` | `str` | User message — the actual content to process |
 | `operation` | `str` | One of: `resume_parsing`, `job_scoring`, `resume_tailoring` |
 
 Returns the raw response text as a string. Callers are responsible for parsing JSON from this string (via `ResponseParser`).
 
-On every successful call, `input_tokens` and `output_tokens` from `message.usage` are accumulated into the internal `_usage` store, keyed by operation name.
+On every successful call, four token counts from `message.usage` are accumulated into the internal `_usage` store, keyed by operation name: `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, and `cache_read_input_tokens`.
 
 `operation` maps to per-operation settings in `config.yaml`:
 
@@ -63,11 +63,13 @@ Returns accumulated token counts since the last `reset_usage()` call, grouped by
 
 ```python
 {
-    "job_scoring":       {"input": 12400, "output": 3600},
-    "resume_parsing":    {"input": 2100,  "output": 800},
-    "resume_tailoring":  {"input": 3200,  "output": 1100},
+    "job_scoring":      {"input": 12400, "output": 3600, "cache_write": 4200, "cache_read": 8200},
+    "resume_parsing":   {"input": 2100,  "output": 800,  "cache_write": 0,    "cache_read": 0},
+    "resume_tailoring": {"input": 3200,  "output": 1100, "cache_write": 0,    "cache_read": 0},
 }
 ```
+
+`cache_write` and `cache_read` are populated only when prompt caching is active (i.e. when `system` is passed as a list with `cache_control`). Both are zero for plain-string system prompts.
 
 Used by `main.py` after a run to record actual token usage in the `runs` table and compute real API cost.
 
@@ -83,6 +85,22 @@ Every call logs at DEBUG level:
 
 This lets you audit `output/logs/run.log` to see exact token usage per call. The same counts are also accumulated in `_usage` and persisted to the `runs` database table at the end of each run.
 
+## Thread Safety
+
+`call()` is invoked from multiple threads concurrently when `ScoringAgent` runs parallel batches via `ThreadPoolExecutor`. The `_usage` dict is therefore protected by `_usage_lock` (a `threading.Lock`):
+
+```python
+with self._usage_lock:
+    if operation not in self._usage:
+        self._usage[operation] = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}
+    self._usage[operation]["input"]       += input_tokens
+    self._usage[operation]["output"]      += output_tokens
+    self._usage[operation]["cache_write"] += cache_write_tokens
+    self._usage[operation]["cache_read"]  += cache_read_tokens
+```
+
+Without the lock, concurrent `+=` operations are read-modify-write sequences that can lose increments when two threads read the same value before either writes back.
+
 ## Token Accumulation and Cost Tracking
 
 `ClaudeClient` maintains a `_usage` dict that accumulates real token counts from the Anthropic API response metadata across the lifetime of a run:
@@ -90,8 +108,8 @@ This lets you audit `output/logs/run.log` to see exact token usage per call. The
 ```
 reset_usage()           ← called at start of cmd_scrape_and_score
   │
-  ├─ call(..."job_scoring")   → adds input/output tokens to _usage["job_scoring"]
-  ├─ call(..."job_scoring")   → adds to the same bucket (each batch)
+  ├─ call(..."job_scoring")   → adds input/output/cache tokens to _usage["job_scoring"]
+  ├─ call(..."job_scoring")   → adds to the same bucket (concurrent batch calls)
   ├─ call(..."resume_parsing")→ adds to _usage["resume_parsing"]
   │
 get_usage()             ← called after scoring to retrieve totals
@@ -105,4 +123,4 @@ This is the source of truth for cost reporting in the Run History dashboard view
 - It does not parse JSON — that is `ResponseParser`'s job.
 - It does not build prompts — that is `PromptLoader`'s job.
 - It does not handle streaming — all calls use the standard blocking Messages API.
-- It does not cache responses — caching happens at the agent level (ProfileAgent).
+- It does not cache responses — prompt caching happens at the agent level via `cache_control` on the system prompt.

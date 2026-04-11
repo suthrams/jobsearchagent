@@ -43,11 +43,26 @@ def load_runs() -> pd.DataFrame:
 
 Both loaders are cached for 30 seconds. A `python main.py` run that finishes will be reflected within 30 seconds without a manual refresh. Both use pandas + direct SQLite connections — they do not go through the `Database` class.
 
-`load_jobs()` reads only `status = 'scored'` jobs, using the denormalised `score_ic`, `score_architect`, `score_management`, and `score_best` columns directly (avoiding JSON parsing in SQL).
+`load_jobs()` reads only `status = 'scored'` jobs where `excluded = 0 OR excluded IS NULL`, using the denormalised `score_ic`, `score_architect`, `score_management`, and `score_best` columns directly (avoiding JSON parsing in SQL).
 
 `load_new_jobs()` powers the **New Jobs** view. It reads `last_run_at()` from the `runs` table, then queries `WHERE found_at >= run_at`. This relies on `run_at` being captured at the **start** of the run (before scraping). If `run_at` were recorded at the end of the run, all jobs would have `found_at < run_at` and this view would show empty. See `main.py` and `storage/db.md` for the fix.
 
 `load_runs()` reads all rows from the `runs` table ordered by `run_at ASC`, adds a `cumulative_cost` column, and returns an empty DataFrame if the table doesn't exist yet (first launch before any run). It also derives `display_cost` — preferring `actual_cost_usd` over `est_cost_usd` when real token data is available.
+
+## Job Exclusion
+
+Jobs can be removed from all views once applied, rejected, or deemed a poor fit — without deleting them from the database.
+
+### Multi-select from tables
+The **Top Matches**, **IC Track**, **Architect Track**, and **Management Track** tables all support multi-row selection (`selection_mode="multi-row"`, `on_select="rerun"`). When at least one row is selected, an exclusion panel appears below the table:
+- A dropdown to choose a reason (Not a good fit / Applied elsewhere / Rejected / Not interested)
+- An **Exclude N job(s)** button — calls `db.exclude_jobs(job_ids, reason)` and triggers a cache clear
+
+### Per-job exclude in card expander
+Each job card expander has a standalone exclusion control (reason dropdown + "Exclude this job" button) for one-at-a-time exclusion while reviewing details.
+
+### Persistence
+`exclude_jobs()` sets `excluded = 1` and `excluded_reason` on the selected rows. All data-loading queries filter these rows out with `WHERE excluded = 0 OR excluded IS NULL`, so excluded jobs never reappear in future runs.
 
 ## Job Cards
 
@@ -57,6 +72,7 @@ Each job is rendered as a `st.expander` with:
 - Clickable link to the original job posting
 - Claude's per-track one-sentence summary
 - **Tailoring section** — track selector, Tailor Resume button, and results display (see below)
+- **Exclusion section** — reason dropdown and Exclude this job button
 
 ## Resume Tailoring
 
@@ -118,11 +134,14 @@ The Run History view reads from the `runs` table and shows all data from `Claude
 | **Output Tokens per Run** | Stacked bar — same breakdown |
 | **Latest Run Cost Breakdown** | Table — per-operation input tokens, output tokens, and USD cost |
 | **Jobs per Run** | Grouped bar — Scraped / New / Scored / Skipped side by side |
+| **Phase Timing** | Stacked bar — Scrape phase and Score phase wall-clock seconds per run |
+| **Avg Batch Latency** | Line chart — mean Claude API call latency (seconds) per run |
+| **Scoring Throughput** | Bar chart — jobs scored per second per run |
 
-Token breakdown charts are only shown once real token data exists (i.e. after the first run following the token tracking upgrade). Older run rows show cost charts only, using `est_cost_usd`.
+Token and latency charts are only shown when real data exists (`has_latency_data` check — runs with `elapsed_total_s > 0`). Older run rows show cost charts only.
 
 ### All Runs table
-Sortable table showing every row in the `runs` table, with columns for timestamp, job activity counts, token counts (when available), per-run cost, and cumulative cost.
+Sortable table showing every row in the `runs` table, with columns for timestamp, job activity counts, token counts (when available), per-run cost, cumulative cost, and latency columns (`elapsed_score_s`, `avg_batch_latency_s`, `jobs_per_second`) when latency data is present.
 
 ## Plotly Integration
 
@@ -131,6 +150,9 @@ Charts use `plotly.express` throughout:
 - Run History cost chart: `color_continuous_scale="teal"`, value labels above bars
 - Token breakdown: stacked bars colour-coded by operation — blue (scoring), green (parsing), orange (tailoring)
 - Cumulative spend: line chart with `markers=True`
+- Phase timing: stacked bar — scrape phase (blue) + score phase (orange) per run
+- Avg batch latency: line chart with `markers=True` — seconds per Claude API call
+- Throughput: bar chart — jobs/second, one bar per run with value labels
 
 ## Configuration
 

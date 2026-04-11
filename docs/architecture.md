@@ -264,46 +264,60 @@ sequenceDiagram
 
 ---
 
-## 4. Agentic Pattern: Batched Fan-Out (ScoringAgent)
+## 4. Agentic Pattern: Parallel Batched Fan-Out (ScoringAgent)
 
-Shows how 5 jobs are packed into one Claude call, scored across all tracks, and mapped back by index.
+Shows how jobs are chunked into batches of 10, submitted concurrently via `ThreadPoolExecutor`, and merged back with thread-safe DB writes.
 
 ```mermaid
 sequenceDiagram
     participant SA as ScoringAgent
-    participant PL as PromptLoader
+    participant TPE as ThreadPoolExecutor
     participant CC as ClaudeClient
     participant API as Anthropic API
-    participant RP as ResponseParser
     participant DB as SQLite
 
-    Note over SA: 50 jobs split into 5 batches of 10
+    Note over SA: Pre-filter gate: stale / no desc / excluded title / non-tech
+    Note over SA: 30 jobs → 3 batches of 10
 
-    loop Each batch of 10 jobs
-        SA->>SA: Filter — stale, no description,\nexcluded title, non-tech desc
-        Note over SA: Build XML block with index tags\njob index 0 through 9
-        SA->>PL: load("score_job", profile, jobs, tracks, salary_min)
-        PL-->>SA: rendered system prompt
+    SA->>TPE: submit _run_batch(1, chunk_1)
+    SA->>TPE: submit _run_batch(2, chunk_2)
+    SA->>TPE: submit _run_batch(3, chunk_3)
 
-        SA->>CC: call(system, "Score these 5 jobs", "job_scoring")
-        CC->>API: messages.create(claude-sonnet-4-6)
-        API-->>CC: JSON array items 0 to 4
-        CC-->>SA: raw response string
+    Note over TPE,API: All 3 batches fire concurrently (MAX_PARALLEL_BATCHES=3)
 
-        SA->>RP: parse_list(raw, BatchJobScore)
-        RP->>RP: strip_code_fences\nextract_json\njson.loads\nmodel_validate x5
-        RP-->>SA: list of BatchJobScore
-
-        Note over SA: Map scores back by job_index
-        SA->>SA: score_map keyed by job_index
-
-        loop Each job in batch
-            SA->>SA: job.scores = TrackScores(ic, architect, management)
-            SA->>SA: job.status = SCORED
-            SA->>DB: update_job(job)
-        end
+    par Batch 1
+        TPE->>CC: call(system[cached], user, "job_scoring")
+        CC->>API: messages.create — cache WRITE on first call
+        API-->>CC: JSON array[0..9]
+        CC-->>TPE: raw response
+    and Batch 2
+        TPE->>CC: call(system[cached], user, "job_scoring")
+        CC->>API: messages.create — cache READ (90% cost reduction)
+        API-->>CC: JSON array[0..9]
+        CC-->>TPE: raw response
+    and Batch 3
+        TPE->>CC: call(system[cached], user, "job_scoring")
+        CC->>API: messages.create — cache READ
+        API-->>CC: JSON array[0..9]
+        CC-->>TPE: raw response
     end
+
+    Note over SA,DB: Results collected via as_completed()
+    Note over SA,DB: Each batch result serialized to DB under db_lock
+
+    loop Each completed future
+        SA->>SA: parse_list(raw, BatchJobScore)
+        SA->>SA: score_map keyed by job_index
+        SA->>DB: update_job(job) — under db_lock
+    end
+
+    Note over SA: last_run_stats: elapsed_score_s, avg_batch_latency_s, jobs_per_second
 ```
+
+**Thread safety notes:**
+- `ClaudeClient._usage` increments are wrapped in `_usage_lock` — prevents lost updates from concurrent `+=`
+- `db.update_job()` calls are serialized with `db_lock` — SQLite WAL mode allows concurrent reads but still serializes commits
+- System prompt is byte-identical across all batches (`num_jobs` is in the user message only), so all concurrent calls share the same Anthropic prompt cache key
 
 ---
 
@@ -504,11 +518,12 @@ mindmap
       profile.json warm cache
       Re-parse only when resume changes
       Saves API calls per run
-    Batched Fan-Out
-      5 jobs per Claude call
-      XML index tags for mapping
-      job_index remaps results
-      10x fewer API calls
+    Parallel Batched Fan-Out
+      10 jobs per Claude call
+      ThreadPoolExecutor 3 workers
+      Concurrent batches share cache key
+      Fault isolated per future
+      3x wall-clock speedup
     Pre-Filter Gate
       Stale date check
       Excluded title keywords
@@ -531,14 +546,30 @@ mindmap
       3x cost reduction vs per-track
     Token Accumulation
       ClaudeClient _usage dict
+      Protected by threading.Lock
       Keyed by operation name
       reset_usage at run start
       get_usage after scoring
       Persisted to runs table
-    Run History
+    Run History and Observability
       runs table in SQLite
       One row per execution
       Actual vs estimated cost
       Per-operation token breakdown
+      Phase timing and throughput
       Dashboard Run History view
+    Prompt Cache Alignment
+      num_jobs in user message only
+      System prompt byte-identical
+      All batches share cache key
+      90 percent cost on cache reads
+    Human-in-the-Loop Curation
+      Job exclusion from dashboard
+      Multi-select or per-card
+      Reason recorded in DB
+      Excluded filtered from all views
+    Timestamp Precision
+      run_started_at before scraping
+      New Jobs view uses WHERE found_at >= run_at
+      Capture order is invariant
 ```
