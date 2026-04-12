@@ -10,11 +10,11 @@
 
 ## HEADLINE OPTIONS
 
-**Option A:** I ran my AI job search agent in production. Here are 4 things that broke and what I actually learned.
+**Option A:** I designed and built an AI agent from scratch to support my job search. Here are 15 patterns I could only have learned by shipping it.
 
-**Option B:** 4 production lessons from running an AI agent for real. The patterns your course probably skipped.
+**Option B:** 15 production patterns from building an agentic AI system end-to-end. What breaks, what it costs, and what the courses skip.
 
-**Option C:** Beyond the 8 patterns. What running an AI agent in production actually teaches you.
+**Option C:** I built an AI agent to support my job search — on my own laptop, against real data, at real cost. Here is what I learned.
 
 ---
 
@@ -1078,13 +1078,17 @@ That distinction matters more than it sounds. Most writing about agentic AI is p
 
 None of these 6 patterns require a new framework or a new model. They require attention to the specific ways agentic systems differ from ordinary software. Cost is a runtime variable, not a constant. Human judgment belongs in the loop at specific points, not everywhere and not nowhere. The order in which you record state is as important as the state itself. And any agent that processes external content is running with an open door unless it is explicitly told to close it.
 
-The system is running. More to come.
+The system is running on my laptop, supporting my job search, and teaching me things I could not have learned any other way. More to come.
 
 ---
 
 ## CALL TO ACTION
 
-Are you building a personal AI agent to solve a real problem you have? What patterns have you found that the courses did not cover? Drop a comment or connect. I would genuinely like to compare notes.
+Are you building a personal AI agent to solve a real problem you have? What patterns have you found that the courses did not cover? Drop a comment — I would genuinely like to compare notes.
+
+I am a solutions architect and engineering leader with deep experience designing distributed systems and enabling AI adoption inside organisations. This project is one way I stay hands-on with the technology I help teams adopt. If you are working through similar challenges — whether that is building your first agentic system, scaling AI into production, or figuring out where LLMs actually belong in your architecture — I would like to connect.
+
+[Connect on LinkedIn](https://www.linkedin.com/in/sivakumar-suthram)
 
 ---
 
