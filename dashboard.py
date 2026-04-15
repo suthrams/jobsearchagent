@@ -93,11 +93,11 @@ def load_job_description(job_id: int) -> str | None:
 
 def mark_job_applied(job_id: int) -> None:
     """Sets status = 'applied' and records applied_at for the given job."""
-    from datetime import datetime
+    from datetime import datetime, timezone
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute(
         "UPDATE jobs SET status = 'applied', applied_at = ? WHERE id = ?",
-        (datetime.utcnow().isoformat(), job_id),
+        (datetime.now(tz=timezone.utc).isoformat(), job_id),
     )
     conn.commit()
     conn.close()

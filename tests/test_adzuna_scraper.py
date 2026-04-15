@@ -109,14 +109,14 @@ def test_disabled_scraper_returns_empty(monkeypatch):
 def test_deduplication_across_locations(scraper):
     """Same URL returned by two different location searches must appear only once."""
     from models.job import Job, JobSource
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     shared_job = Job(
         url="https://example.com/job/1",
         source=JobSource.ADZUNA,
         title="Software Architect",
         company="Acme",
-        found_at=datetime.utcnow(),
+        found_at=datetime.now(tz=timezone.utc),
     )
 
     scraper._fetch_jobs = lambda kw, location="": [shared_job]

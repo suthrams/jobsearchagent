@@ -9,7 +9,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -28,7 +28,6 @@ def db(tmp_path):
 def _make_job(**overrides):
     """Minimal Job-like dict for direct SQL insertion."""
     from models.job import Job, JobSource, ApplicationStatus
-    from datetime import datetime, timezone
 
     defaults = dict(
         url="https://example.com/job/1",
@@ -39,7 +38,7 @@ def _make_job(**overrides):
         work_mode="remote",
         description="Build cloud-native software systems on AWS.",
         status=ApplicationStatus.NEW,
-        found_at=datetime.utcnow(),
+        found_at=datetime.now(tz=timezone.utc),
     )
     defaults.update(overrides)
     return Job(**defaults)
@@ -57,7 +56,7 @@ def test_new_jobs_query_uses_run_start_not_run_end(db):
 
     Fix: run_at must be captured before scraping begins, so run_at <= found_at.
     """
-    run_start = datetime.utcnow()
+    run_start = datetime.now(tz=timezone.utc)
 
     # Insert a job (simulates scraping — happens after run_start)
     job = _make_job(found_at=run_start + timedelta(seconds=5))
@@ -92,7 +91,7 @@ def test_run_at_after_found_at_causes_empty_dashboard(db):
     Demonstrates the original bug: if run_at is recorded AFTER found_at,
     the dashboard returns empty. This test documents why the fix matters.
     """
-    run_start = datetime.utcnow()
+    run_start = datetime.now(tz=timezone.utc)
 
     job = _make_job(found_at=run_start)
     db.insert_job(job)
@@ -148,7 +147,7 @@ def test_get_by_title_company(db):
 
 def test_insert_run_returns_id(db):
     run_id = db.insert_run(
-        run_at=datetime.utcnow(),
+        run_at=datetime.now(tz=timezone.utc),
         jobs_scraped=10,
         jobs_new=5,
         jobs_scored=4,
@@ -162,7 +161,7 @@ def test_insert_run_returns_id(db):
 
 def test_get_runs_returns_list(db):
     db.insert_run(
-        run_at=datetime.utcnow(),
+        run_at=datetime.now(tz=timezone.utc),
         jobs_scraped=3,
         jobs_new=3,
         jobs_scored=2,

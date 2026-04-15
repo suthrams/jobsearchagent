@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
@@ -228,13 +228,7 @@ class Job(BaseModel):
             posted = posted.replace(tzinfo=timezone.utc)
         return (now - posted).days > 30
 
-    class Config:
-        """
-        Pydantic model configuration.
-        - populate_by_name : allows fields to be set by their Python name
-        - use_enum_values  : serializes enums as their string values (e.g. "new" not ApplicationStatus.NEW)
-                             this keeps the database and JSON output clean
-        """
-
-        populate_by_name = True
-        use_enum_values = True
+    model_config = ConfigDict(
+        populate_by_name=True,
+        use_enum_values=True,
+    )

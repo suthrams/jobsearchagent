@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ─── Sub-models ───────────────────────────────────────────────────────────────
@@ -33,8 +33,8 @@ class Experience(BaseModel):
         Returns the number of years spent in this role.
         Uses the current year for roles still in progress.
         """
-        from datetime import datetime
-        end = self.end_year or datetime.utcnow().year
+        from datetime import datetime, timezone
+        end = self.end_year or datetime.now(tz=timezone.utc).year
         return max(0, end - self.start_year)
 
 
@@ -118,9 +118,4 @@ class Profile(BaseModel):
                 return e.title
         return self.experience[0].title if self.experience else None
 
-    class Config:
-        """
-        Pydantic model configuration.
-        - populate_by_name : allows fields to be set by their Python name
-        """
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

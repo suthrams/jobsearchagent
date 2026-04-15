@@ -17,7 +17,7 @@ import logging
 import math
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -401,7 +401,7 @@ def cmd_scrape_and_score(config: AppConfig, db: Database, agents: dict, client: 
       6. Print the results table
     """
     client.reset_usage()  # clear any tokens from previous operations this session
-    run_started_at = datetime.utcnow()  # capture before scraping so dashboard query works
+    run_started_at = datetime.now(tz=timezone.utc)  # capture before scraping so dashboard query works
     t_total_start = time.perf_counter()
 
     console.print("[bold]Scraping jobs...[/bold]")
@@ -631,7 +631,7 @@ def cmd_tailor(config: AppConfig, db: Database, agents: dict, job_id: int) -> No
     # Mark as applied if the user confirms
     apply = input("\nMark as APPLIED? (y/n): ").strip().lower()
     if apply == "y":
-        job.applied_at = datetime.utcnow()
+        job.applied_at = datetime.now(tz=timezone.utc)
         job.status = ApplicationStatus.APPLIED
         db.update_job(job)
         console.print("[green]Status updated to APPLIED[/green]")

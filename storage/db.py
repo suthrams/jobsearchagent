@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -472,7 +472,7 @@ class Database:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                (run_at or datetime.utcnow()).isoformat(),
+                (run_at or datetime.now(tz=timezone.utc)).isoformat(),
                 jobs_scraped, jobs_new, jobs_scored, jobs_skipped, batches,
                 round(est_cost_usd, 6),
                 tokens_input_scoring, tokens_output_scoring,
