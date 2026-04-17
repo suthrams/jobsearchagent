@@ -449,7 +449,7 @@ sequenceDiagram
 
 `insert_run()` was calling `datetime.utcnow()` internally, at the moment it was called, which was after all scraping and scoring had already finished. Every job's `found_at` timestamp was earlier than the run's `run_at` timestamp. So `WHERE found_at >= run_at` returned nothing.
 
-The fix was a single line: capture `run_started_at = datetime.utcnow()` as the very first statement of the run, before any scraping begins, and pass it explicitly into `insert_run()`.
+The fix was a single line: capture `run_started_at = datetime.now(tz=timezone.utc)` as the very first statement of the run, before any scraping begins, and pass it explicitly into `insert_run()`.
 
 **Before** — `insert_run()` stamps its own timestamp internally at the moment it is called, which is after all scraping has finished. Every job's `found_at` is earlier than `run_at`. The "New Jobs" query returns zero rows.
 
@@ -472,7 +472,7 @@ db.insert_run(...)                    # internally: run_at = datetime.utcnow() =
 # Boundary captured first. Passed explicitly. insert_run() no longer self-timestamps.
 
 client.reset_usage()
-run_started_at = datetime.utcnow()    # ← first line, before any scraping
+run_started_at = datetime.now(tz=timezone.utc)  # ← first line, before any scraping
 
 raw_jobs = run_scrapers(config)       # jobs inserted with found_at = 09:00:05
 score_jobs(raw_jobs)

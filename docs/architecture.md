@@ -187,7 +187,7 @@ End-to-end flow for `python main.py` (the default scrape + score command).
 flowchart TD
     START([python main.py]) --> CONFIG[Load and validate config.yaml]
     CONFIG --> BOOT[Bootstrap DB, ClaudeClient, Agents]
-    BOOT --> TIMESTAMP["run_started_at = datetime.utcnow()\ncaptured BEFORE scraping\nused as run_at in DB so dashboard\nWHERE found_at >= run_at works"]
+    BOOT --> TIMESTAMP["run_started_at = datetime.now(tz=timezone.utc)\ncaptured BEFORE scraping\nused as run_at in DB so dashboard\nWHERE found_at >= run_at works"]
     TIMESTAMP --> SCRAPE
 
     subgraph SCRAPE["Scrape Phase"]

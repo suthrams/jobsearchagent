@@ -95,7 +95,7 @@ CREATE TABLE jobs (
 
 One row per `python main.py` execution. Used by the Run History dashboard view and by the **New Jobs** dashboard view (which queries `WHERE found_at >= run_at` to show only jobs found in the latest run).
 
-> **Important:** `run_at` must be captured at the **start** of the run (before any scraping), not at the end. If `run_at` is later than `found_at` for the scraped jobs, the New Jobs view returns empty. `main.py` captures `run_started_at = datetime.utcnow()` as the very first action in `cmd_scrape_and_score()` and passes it to `insert_run(run_at=run_started_at, ...)`.
+> **Important:** `run_at` must be captured at the **start** of the run (before any scraping), not at the end. If `run_at` is later than `found_at` for the scraped jobs, the New Jobs view returns empty. `main.py` captures `run_started_at = datetime.now(tz=timezone.utc)` as the very first action in `cmd_scrape_and_score()` and passes it to `insert_run(run_at=run_started_at, ...)`.
 
 ```sql
 CREATE TABLE runs (

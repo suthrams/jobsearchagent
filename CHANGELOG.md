@@ -4,6 +4,14 @@ All notable changes are documented here, grouped by date.
 
 ---
 
+## 2026-04-17
+
+### Fixed
+- Update docs to match deprecated-API fixes from 2026-04-15: replace `datetime.utcnow()` references with `datetime.now(tz=timezone.utc)` and old Pydantic `class Config` snippet with `model_config = ConfigDict(...)` in `docs/models/job.md`, `docs/main.md`, `docs/storage/db.md`, `docs/architecture.md`, and `docs/blog_draft_patterns_v2.md`
+- Blog draft `BEFORE` code block intentionally preserves `utcnow()` to illustrate the original bug
+
+---
+
 ## 2026-04-15
 
 ### Fixed

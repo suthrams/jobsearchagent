@@ -131,9 +131,10 @@ Returns `True` if `posted_at` is more than 30 days ago. Jobs failing this check 
 ## Pydantic Config
 
 ```python
-class Config:
-    populate_by_name = True   # allows setting fields by Python name
-    use_enum_values = True    # serialises enums as strings ("new" not ApplicationStatus.NEW)
+model_config = ConfigDict(
+    populate_by_name=True,   # allows setting fields by Python name
+    use_enum_values=True,    # serialises enums as strings ("new" not ApplicationStatus.NEW)
+)
 ```
 
-`use_enum_values = True` keeps the database and JSON output clean — enum values are stored as their string representations.
+`use_enum_values=True` keeps the database and JSON output clean — enum values are stored as their string representations.

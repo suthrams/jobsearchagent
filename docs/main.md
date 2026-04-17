@@ -32,7 +32,7 @@ All components are created once and injected into agents — no globals, no sing
 ## Command: Scrape and Score (default)
 
 ```
-run_started_at = datetime.utcnow()  — captured BEFORE scraping; passed to insert_run
+run_started_at = datetime.now(tz=timezone.utc)  — captured BEFORE scraping; passed to insert_run
                                        so dashboard WHERE found_at >= run_at works correctly
 client.reset_usage()                — clear token counters before this run starts
 
